@@ -56,13 +56,18 @@ function addTodo() {
 }
 
 function handleMainButtonClick() {
-    const activeCount = todos.filter(todo => !todo.completed).length;
-    const word = getTaskWord(activeCount);
-    const message = `У тебя ${activeCount} ${word} в списке.`;
+    const totalCount = todos.length;
+    const completedCount = todos.filter(todo => todo.completed).length;
+    const activeCount = totalCount - completedCount;
+    
+    const totalWord = getTaskWord(totalCount);
+    const completedWord = getTaskWord(completedCount);
+    
+    const message = `Всего задач: ${totalCount} ${totalWord}\nВыполнено: ${completedCount} ${completedWord}`;
 
     if (tg?.showPopup) {
         tg.showPopup({
-            title: 'Список задач',
+            title: 'Статистика задач',
             message,
             buttons: [{ type: 'ok', text: 'Закрыть' }]
         });
