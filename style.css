@@ -30,6 +30,14 @@ h1 {
     font-size: 2.5rem;
 }
 
+.greeting {
+    text-align: center;
+    color: #555;
+    margin-bottom: 20px;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
 .input-section {
     display: flex;
     gap: 10px;

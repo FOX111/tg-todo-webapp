@@ -4,6 +4,8 @@ const addButton = document.getElementById('addButton');
 const todoList = document.getElementById('todoList');
 const todoCount = document.getElementById('todoCount');
 const clearCompleted = document.getElementById('clearCompleted');
+const userGreeting = document.getElementById('userGreeting');
+const tg = window.Telegram?.WebApp;
 
 // Массив для хранения задач
 let todos = [];
@@ -12,6 +14,7 @@ let todos = [];
 document.addEventListener('DOMContentLoaded', () => {
     loadTodos();
     renderTodos();
+    initTelegramIntegration();
 });
 
 // Добавление задачи по клику на кнопку
@@ -50,6 +53,48 @@ function addTodo() {
     
     saveTodos();
     renderTodos();
+}
+
+function handleMainButtonClick() {
+    const activeCount = todos.filter(todo => !todo.completed).length;
+    const word = getTaskWord(activeCount);
+    const message = `У тебя ${activeCount} ${word} в списке.`;
+
+    if (tg?.showPopup) {
+        tg.showPopup({
+            title: 'Список задач',
+            message,
+            buttons: [{ type: 'ok', text: 'Закрыть' }]
+        });
+    } else {
+        alert(message);
+    }
+}
+
+function initTelegramIntegration() {
+    if (!tg) {
+        if (userGreeting) {
+            userGreeting.textContent = 'Открой в Telegram, чтобы увидеть приветствие.';
+        }
+        return;
+    }
+
+    try {
+        tg.ready();
+        tg.expand();
+    } catch (err) {
+        console.error('Telegram init error', err);
+    }
+
+    const user = tg.initDataUnsafe?.user;
+    const name = user?.first_name || user?.username || 'друг';
+    if (userGreeting) {
+        userGreeting.textContent = `Привет, ${name}!`;
+    }
+
+    tg.MainButton.setText('Готово');
+    tg.MainButton.onClick(handleMainButtonClick);
+    tg.MainButton.show();
 }
 
 // Функция переключения состояния задачи
