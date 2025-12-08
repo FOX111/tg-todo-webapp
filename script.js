@@ -7,14 +7,25 @@ const clearCompleted = document.getElementById('clearCompleted');
 const userGreeting = document.getElementById('userGreeting');
 const tg = window.Telegram?.WebApp;
 
+// URL бэкенда
+const API_URL = 'https://tg-todo-webapp-production.up.railway.app';
+
 // Массив для хранения задач
 let todos = [];
+let userId = null;
 
-// Загрузка задач из localStorage при загрузке страницы
-document.addEventListener('DOMContentLoaded', () => {
-    loadTodos();
-    renderTodos();
+// Загрузка задач из API при загрузке страницы
+document.addEventListener('DOMContentLoaded', async () => {
+    // Сначала инициализируем Telegram и получаем userId
     initTelegramIntegration();
+    
+    // Небольшая задержка, чтобы убедиться, что userId установлен
+    // (особенно важно для Telegram WebApp)
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Затем загружаем задачи
+    await loadTodos();
+    renderTodos();
 });
 
 // Добавление задачи по клику на кнопку
@@ -81,6 +92,8 @@ function initTelegramIntegration() {
         if (userGreeting) {
             userGreeting.textContent = 'Открой в Telegram, чтобы увидеть приветствие.';
         }
+        // Если Telegram не доступен, используем временный userId
+        userId = `guest_${Date.now()}`;
         return;
     }
 
@@ -96,6 +109,9 @@ function initTelegramIntegration() {
     if (userGreeting) {
         userGreeting.textContent = `Привет, ${name}!`;
     }
+
+    // Получаем userId из Telegram
+    userId = user?.id?.toString() || `guest_${Date.now()}`;
 
     tg.MainButton.setText('Готово');
     tg.MainButton.onClick(handleMainButtonClick);
@@ -172,16 +188,56 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Сохранение в localStorage
-function saveTodos() {
-    localStorage.setItem('todos', JSON.stringify(todos));
+// Сохранение задач на сервер
+async function saveTodos() {
+    if (!userId) {
+        console.error('userId is not set');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/todos`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                userId: userId,
+                todos: todos
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('Todos saved successfully:', result);
+    } catch (error) {
+        console.error('Error saving todos:', error);
+    }
 }
 
-// Загрузка из localStorage
-function loadTodos() {
-    const stored = localStorage.getItem('todos');
-    if (stored) {
-        todos = JSON.parse(stored);
+// Загрузка задач с сервера
+async function loadTodos() {
+    if (!userId) {
+        console.error('userId is not set');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/todos?userId=${encodeURIComponent(userId)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const loadedTodos = await response.json();
+        todos = Array.isArray(loadedTodos) ? loadedTodos : [];
+        console.log('Todos loaded successfully:', todos);
+    } catch (error) {
+        console.error('Error loading todos:', error);
+        todos = [];
     }
 }
 
