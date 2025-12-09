@@ -7,23 +7,39 @@ const clearCompleted = document.getElementById('clearCompleted');
 const userGreeting = document.getElementById('userGreeting');
 const tg = window.Telegram?.WebApp;
 
-// URL бэкенда
-const API_URL = 'https://tg-todo-webapp-production.up.railway.app';
-
 // Массив для хранения задач
 let todos = [];
-let userId = null;
 
-// Загрузка задач из API при загрузке страницы
+// Функция для вывода отладочной информации на экран
+function addDebugInfo(message, type = 'info') {
+    const debugInfo = document.getElementById('debugInfo');
+    if (!debugInfo) return;
+    
+    const line = document.createElement('div');
+    line.className = `debug-line ${type}`;
+    line.textContent = message;
+    debugInfo.appendChild(line);
+    
+    // Также выводим в консоль для полноты
+    console.log(message);
+}
+
+function clearDebugInfo() {
+    const debugInfo = document.getElementById('debugInfo');
+    if (debugInfo) {
+        debugInfo.innerHTML = '';
+    }
+}
+
+// Инициализация приложения при загрузке страницы
 document.addEventListener('DOMContentLoaded', async () => {
-    // Сначала инициализируем Telegram и получаем userId
+    // Сначала инициализируем Telegram WebApp
     initTelegramIntegration();
     
-    // Небольшая задержка, чтобы убедиться, что userId установлен
-    // (особенно важно для Telegram WebApp)
+    // Небольшая задержка для корректной инициализации Telegram API
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    // Затем загружаем задачи
+    // Загружаем задачи из Telegram Cloud Storage
     await loadTodos();
     renderTodos();
 });
@@ -88,31 +104,57 @@ function handleMainButtonClick() {
 }
 
 function initTelegramIntegration() {
+    clearDebugInfo();
+    addDebugInfo('=== ДИАГНОСТИКА TELEGRAM ===');
+    
+    // ДИАГНОСТИКА: Проверяем есть ли Telegram WebApp API
+    addDebugInfo(`1️⃣ Telegram WebApp доступен: ${!!tg ? '✅ ДА' : '❌ НЕТ'}`, !!tg ? 'success' : 'error');
+    
     if (!tg) {
         if (userGreeting) {
-            userGreeting.textContent = 'Открой в Telegram, чтобы увидеть приветствие.';
+            userGreeting.textContent = '⚠️ Открой в Telegram для сохранения задач';
         }
-        // Если Telegram не доступен, используем временный userId
-        userId = `guest_${Date.now()}`;
+        addDebugInfo(`❌ ПРОБЛЕМА: Telegram не доступен`, 'error');
+        addDebugInfo(`   Задачи НЕ будут сохраняться!`, 'warning');
+        addDebugInfo('=========================');
         return;
     }
 
     try {
         tg.ready();
         tg.expand();
+        addDebugInfo('2️⃣ Telegram инициализирован', 'success');
     } catch (err) {
-        console.error('Telegram init error', err);
+        addDebugInfo(`❌ Ошибка инициализации: ${err.message}`, 'error');
     }
 
+    // Проверяем доступность Cloud Storage
+    const hasCloudStorage = !!tg.CloudStorage;
+    addDebugInfo(`3️⃣ Cloud Storage доступен: ${hasCloudStorage ? '✅ ДА' : '❌ НЕТ'}`, hasCloudStorage ? 'success' : 'error');
+
+    // ДИАГНОСТИКА: Смотрим что в initDataUnsafe
     const user = tg.initDataUnsafe?.user;
+    
+    addDebugInfo(`4️⃣ Данные пользователя:`);
+    if (user) {
+        addDebugInfo(`   - ID: ${user.id || 'НЕТ'}`, user.id ? 'success' : 'error');
+        addDebugInfo(`   - Имя: ${user.first_name || 'НЕТ'}`);
+        addDebugInfo(`   - Username: ${user.username || 'НЕТ'}`);
+    } else {
+        addDebugInfo(`   ❌ User данные недоступны`, 'error');
+    }
+    
     const name = user?.first_name || user?.username || 'друг';
+    
+    addDebugInfo('=========================');
+    
+    // Показываем приветствие
     if (userGreeting) {
-        userGreeting.textContent = `Привет, ${name}!`;
+        userGreeting.textContent = `✅ Привет, ${name}!`;
+        userGreeting.style.color = '#155724';
     }
 
-    // Получаем userId из Telegram
-    userId = user?.id?.toString() || `guest_${Date.now()}`;
-
+    // Настраиваем главную кнопку
     tg.MainButton.setText('Готово');
     tg.MainButton.onClick(handleMainButtonClick);
     tg.MainButton.show();
@@ -188,56 +230,95 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Сохранение задач на сервер
+// Сохранение задач в Telegram Cloud Storage
 async function saveTodos() {
-    if (!userId) {
-        console.error('userId is not set');
+    addDebugInfo('');
+    addDebugInfo('=== СОХРАНЕНИЕ ЗАДАЧ ===');
+    addDebugInfo(`Количество задач: ${todos.length}`);
+    
+    // Если Telegram недоступен, сохраняем в localStorage как fallback
+    if (!tg || !tg.CloudStorage) {
+        addDebugInfo('⚠️ Cloud Storage недоступен, используем localStorage', 'warning');
+        try {
+            localStorage.setItem('todos', JSON.stringify(todos));
+            addDebugInfo('✅ Сохранено в localStorage', 'success');
+        } catch (error) {
+            addDebugInfo(`❌ Ошибка localStorage: ${error.message}`, 'error');
+        }
+        addDebugInfo('====================');
         return;
     }
 
     try {
-        const response = await fetch(`${API_URL}/todos`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                userId: userId,
-                todos: todos
-            })
+        const todosJson = JSON.stringify(todos);
+        
+        // Используем промис для async/await
+        await new Promise((resolve, reject) => {
+            tg.CloudStorage.setItem('todos', todosJson, (error, success) => {
+                if (error) {
+                    reject(new Error(error));
+                } else {
+                    resolve(success);
+                }
+            });
         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('Todos saved successfully:', result);
+        addDebugInfo('✅ Задачи сохранены в Telegram Cloud!', 'success');
+        addDebugInfo('====================');
     } catch (error) {
-        console.error('Error saving todos:', error);
+        addDebugInfo(`❌ Ошибка сохранения: ${error.message}`, 'error');
+        addDebugInfo('====================');
     }
 }
 
-// Загрузка задач с сервера
+// Загрузка задач из Telegram Cloud Storage
 async function loadTodos() {
-    if (!userId) {
-        console.error('userId is not set');
+    addDebugInfo('');
+    addDebugInfo('=== ЗАГРУЗКА ЗАДАЧ ===');
+    
+    // Если Telegram недоступен, загружаем из localStorage как fallback
+    if (!tg || !tg.CloudStorage) {
+        addDebugInfo('⚠️ Cloud Storage недоступен, используем localStorage', 'warning');
+        try {
+            const savedTodos = localStorage.getItem('todos');
+            todos = savedTodos ? JSON.parse(savedTodos) : [];
+            addDebugInfo(`✅ Загружено из localStorage: ${todos.length} задач`, 'success');
+        } catch (error) {
+            addDebugInfo(`❌ Ошибка localStorage: ${error.message}`, 'error');
+            todos = [];
+        }
+        addDebugInfo('===================');
         return;
     }
 
     try {
-        const response = await fetch(`${API_URL}/todos?userId=${encodeURIComponent(userId)}`);
+        // Используем промис для async/await
+        const todosJson = await new Promise((resolve, reject) => {
+            tg.CloudStorage.getItem('todos', (error, value) => {
+                if (error) {
+                    reject(new Error(error));
+                } else {
+                    resolve(value);
+                }
+            });
+        });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        if (todosJson) {
+            todos = JSON.parse(todosJson);
+            addDebugInfo(`✅ Загружено из Telegram Cloud: ${todos.length} задач`, 'success');
+            if (todos.length > 0) {
+                addDebugInfo(`   Первая задача: ${todos[0].text?.substring(0, 30)}...`);
+            }
+        } else {
+            todos = [];
+            addDebugInfo('ℹ️ Задач пока нет (первый запуск)', 'info');
         }
-
-        const loadedTodos = await response.json();
-        todos = Array.isArray(loadedTodos) ? loadedTodos : [];
-        console.log('Todos loaded successfully:', todos);
+        
+        addDebugInfo('===================');
     } catch (error) {
-        console.error('Error loading todos:', error);
+        addDebugInfo(`❌ Ошибка загрузки: ${error.message}`, 'error');
         todos = [];
+        addDebugInfo('===================');
     }
 }
 
